@@ -3,6 +3,42 @@ from torch import nn
 from torch.nn import functional as F
 
 
+class Swish(nn.Module):
+    def __init__(self):
+        super(Swish, self).__init__()
+
+    def forward(self, x):
+        return x * F.sigmoid(x)
+
+
+class SELayer(nn.Module):
+    def __init__(self, in_planes, reduced_dim):
+        super().__init__()
+        self.layer_1_avp = nn.AdaptiveAvgPool2d(1)
+        self.layer_2_conv = nn.Conv2d(in_channels=in_planes, out_channels=reduced_dim, kernel_size=1)
+        self.layer_3_swish = Swish()
+        self.layer_4_conv = nn.Conv2d(in_channels=reduced_dim, out_channels=in_planes, kernel_size=1)
+        self.layer_5_sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.layer_1_avp(x)
+        x = self.layer_2_conv(x)
+        x = self.layer_3_swish(x)
+        x = self.layer_4_conv(x)
+        x = self.layer_5_sigmoid(x)
+        return x
+
+
+
+class MBConvBlock(nn.Module):
+    def __init__(self):
+        super(MBConvBlock, self).__init__()
+        pass
+
+    def forward(self):
+        pass
+
+
 class BottleneckResidualBlock(nn.Module):
 
     def __init__(self, first_channel, last_channel, factor, stride):
@@ -30,6 +66,13 @@ class BottleneckResidualBlock(nn.Module):
         if self.stride == 1 and identity.size() == x.size():
             x += identity
         return x
+
+
+class EfficientNet(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layer_1_conv = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
+        self.layer_2_bottleneck =
 
 
 def test():
