@@ -12,9 +12,10 @@ class Swish(nn.Module):
 
 
 class SEBlock(nn.Module):
-    def __init__(self, in_planes, ratio):
+    def __init__(self, in_planes, se_ratio):
         super().__init__()
-        reduced_dim = max(1, int(in_planes * ratio))
+        assert 0 < se_ratio <= 1, "se_ratio should be within the range of 0 and 1"
+        reduced_dim = max(1, int(in_planes * se_ratio))
         self.layer_1_avp = nn.AdaptiveAvgPool2d(1)
         self.layer_2_squeeze = nn.Conv2d(in_channels=in_planes, out_channels=reduced_dim, kernel_size=1)
         self.layer_3_swish = Swish()
@@ -61,15 +62,49 @@ class BottleneckResidualBlock(nn.Module):
         return x
 
 
-class MBConvBlock(nn.Module):
-    def __init__(self, first_channel, last_channel, factor, stride, reduced_dim):
-        super(MBConvBlock, self).__init__()
+class MBConvBlock_Naive(nn.Module):
+    def __init__(self, first_channel, last_channel, factor, stride, ratio):
+        super(MBConvBlock_Naive, self).__init__()
         self.bottleneck = BottleneckResidualBlock(first_channel, last_channel, factor, stride)
-        self.se_block = SEBlock(last_channel, reduced_dim)
+        self.se_block = SEBlock(last_channel, ratio)
 
     def forward(self, x):
         x = self.bottleneck(x)
         x = self.se_block(x)
+        return x
+
+
+class MBConvBlock(nn.Module):
+    def __init__(self, first_channel, last_channel, stride, se_ratio=0.25, is_six=True):
+        super().__init__()
+
+        # MBConv1 vs MBConv6 difference
+        self.is_six =is_six
+        c = int(first_channel * 6) if is_six else first_channel
+
+        self.layer_1_conv = nn.Conv2d(in_channels=first_channel, out_channels=c, kernel_size=1, stride=1)
+        self.layer_2_bn = nn.BatchNorm2d(self.layer_1_conv.out_channels)
+        self.layer_3_swish = Swish()
+
+        self.layer_4_dw_conv = nn.Conv2d(in_channels=c, out_channels=c, kernel_size=3, stride=stride, groups=c, padding=1)
+        self.layer_5_bn = nn.BatchNorm2d(self.layer_4_dw_conv.out_channels)
+        self.layer_6_swish = Swish()
+        self.layer_7_se = SEBlock(in_planes=self.layer_4_dw_conv.out_channels, se_ratio=se_ratio)
+        self.layer_8_pw = nn.Conv2d(in_channels=self.layer_4_dw_conv.out_channels, out_channels=last_channel, kernel_size=1)
+        self.layer_9_bn = nn.BatchNorm2d(self.layer_8_pw.out_channels)
+
+    def forward(self, x):
+        if self.is_six:
+            x = self.layer_1_conv(x)
+            x = self.layer_2_bn(x)
+            x = self.layer_3_swish(x)
+
+        x = self.layer_4_dw_conv(x)
+        x = self.layer_5_bn(x)
+        x = self.layer_6_swish(x)
+        x = self.layer_7_se(x)
+        x = self.layer_8_pw(x)
+        x = self.layer_9_bn(x)
         return x
 
 
@@ -95,11 +130,19 @@ def test():
 
 
 def test_2():
-    mb_conv_block = MBConvBlock(first_channel=16, last_channel=64, factor=4, stride=1, reduced_dim=32)
+    mb_conv_block = MBConvBlock_Naive(first_channel=16, last_channel=64, factor=4, stride=1, ratio=0.25)
     x = torch.randn((100, 16, 224, 224))
     output = mb_conv_block(x)
     print(output.size())
 
 
+def test_3():
+    mb_conv_block = MBConvBlock(first_channel=16, last_channel=64, stride=2, se_ratio=0.25, is_six=True)
+    x = torch.randn((100, 16, 224, 224))
+    output = mb_conv_block(x)
+    print(output.size())
+
+
+
 if __name__ == "__main__":
-    test_2()
+    test_3()
