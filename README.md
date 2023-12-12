@@ -5,3 +5,5 @@
 
 ### references:
 - https://arxiv.org/pdf/1905.11946.pdf
+- https://github.com/keras-team/keras-applications/blob/master/keras_applications/efficientnet.py
+- https://github.com/tensorflow/tpu/blob/master/models/official/efficientnet/efficientnet_model.py
