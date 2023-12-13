@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
+from torchsummary import summary
 
 
 class Swish(nn.Module):
@@ -75,18 +76,19 @@ class MBConvBlock_Naive(nn.Module):
 
 
 class MBConvBlock(nn.Module):
-    def __init__(self, first_channel, last_channel, stride, se_ratio=0.25, is_six=True):
+    def __init__(self, first_channel, last_channel, stride, kernel_size=3, se_ratio=0.25, is_six=True):
         super().__init__()
 
         # MBConv1 vs MBConv6 difference
-        self.is_six =is_six
+        self.is_six = is_six
+        self.last_channel = last_channel
         c = int(first_channel * 6) if is_six else first_channel
 
         self.layer_1_conv = nn.Conv2d(in_channels=first_channel, out_channels=c, kernel_size=1, stride=1)
         self.layer_2_bn = nn.BatchNorm2d(self.layer_1_conv.out_channels)
         self.layer_3_swish = Swish()
 
-        self.layer_4_dw_conv = nn.Conv2d(in_channels=c, out_channels=c, kernel_size=3, stride=stride, groups=c, padding=1)
+        self.layer_4_dw_conv = nn.Conv2d(in_channels=c, out_channels=c, kernel_size=kernel_size, stride=stride, groups=c, padding=1)
         self.layer_5_bn = nn.BatchNorm2d(self.layer_4_dw_conv.out_channels)
         self.layer_6_swish = Swish()
         self.layer_7_se = SEBlock(in_planes=self.layer_4_dw_conv.out_channels, se_ratio=se_ratio)
@@ -108,13 +110,52 @@ class MBConvBlock(nn.Module):
         return x
 
 
-class EfficientNet(nn.Module):
-    def __init__(self):
+class EfficientNet_B0(nn.Module):
+    def __init__(self, num_class):
         super().__init__()
         self.layer_1_conv = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1)
-        pass
+        self.layer_2_mbconv1 = MBConvBlock(first_channel=self.layer_1_conv.out_channels, last_channel=16, stride=1, is_six=False)
+        self.layer_3_mbconv6 = nn.Sequential(
+            MBConvBlock(first_channel=self.layer_2_mbconv1.last_channel, last_channel=24, stride=1),
+            MBConvBlock(first_channel=24, last_channel=24, stride=1)
+        )
+        self.layer_4_mbconv6 = nn.Sequential(
+            MBConvBlock(first_channel=24, last_channel=40, stride=2, kernel_size=5),
+            MBConvBlock(first_channel=40, last_channel=40, stride=1, kernel_size=5)
+        )
+        self.layer_5_mbconv6 = nn.Sequential(
+            MBConvBlock(first_channel=40, last_channel=80, stride=2),
+            MBConvBlock(first_channel=80, last_channel=80, stride=1),
+            MBConvBlock(first_channel=80, last_channel=80, stride=1)
+        )
+        self.layer_6_mbconv6 = nn.Sequential(
+            MBConvBlock(first_channel=80, last_channel=112, stride=1, kernel_size=5),
+            MBConvBlock(first_channel=112, last_channel=112, stride=1, kernel_size=5),
+            MBConvBlock(first_channel=112, last_channel=112, stride=1, kernel_size=5)
+        )
+        self.layer_7_mbconv6 = nn.Sequential(
+            MBConvBlock(first_channel=112, last_channel=192, stride=2, kernel_size=5),
+            MBConvBlock(first_channel=192, last_channel=192, stride=1, kernel_size=5),
+            MBConvBlock(first_channel=192, last_channel=192, stride=1, kernel_size=5),
+            MBConvBlock(first_channel=192, last_channel=192, stride=1, kernel_size=5)
+        )
+        self.layer_8_mbconv6 = MBConvBlock(first_channel=192, last_channel=320, stride=1)
+        self.layer_9_conv = nn.Conv2d(in_channels=self.layer_8_mbconv6.last_channel, out_channels=1280, kernel_size=1, padding=1)
+        self.layer_10_avp = nn.AdaptiveAvgPool2d(1)
+        self.layer_11_fc = nn.Linear(in_features=1280, out_features=num_class)
 
     def forward(self, x):
+        x = self.layer_1_conv(x)
+        x = self.layer_2_mbconv1(x)
+        x = self.layer_3_mbconv6(x)
+        x = self.layer_4_mbconv6(x)
+        x = self.layer_5_mbconv6(x)
+        x = self.layer_6_mbconv6(x)
+        x = self.layer_7_mbconv6(x)
+        x = self.layer_8_mbconv6(x)
+        x = self.layer_9_conv(x)
+        x = self.layer_10_avp(x)
+        # x = self.layer_11_fc(x)
         return x
 
 
@@ -143,6 +184,10 @@ def test_3():
     print(output.size())
 
 
+def test_model():
+    model = EfficientNet_B0(num_class=10)
+    summary(model, (3, 224, 224))
+
 
 if __name__ == "__main__":
-    test_3()
+    test_model()
